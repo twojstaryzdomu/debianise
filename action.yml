@@ -1,0 +1,164 @@
+name: 'debianise'
+description: 'Builds a debian package from sources in a github repository'
+inputs:
+  path:
+    description: 'Path to the checked out sources to build'
+    required: false
+    default: ''
+  install_build_depends:
+    description: 'Install packages listed in Build-Depends prior to build'
+    required: true
+    default: true
+  additional_build_depends:
+    description: 'Additional packages to install prior to build'
+    required: false
+    default: ''
+  additional_archive:
+    description: 'Path to additional *.tar.gz file to extract prior to build'
+    required: false
+    default: ''
+  pre_build_cmd:
+    description: 'Additional command to execute before build'
+    required: false
+    default: ''
+  package:
+    description: 'Package name if different from repository_name'
+    required: false
+    default: '${GITHUB_REPOSITORY##*/}'
+  version:
+    description: 'Version to build'
+    required: false
+    default: ''
+  create_changelog:
+    description: 'Create changelog based on git commit entries'
+    required: false
+    default: true
+  release_name:
+    description: 'Value to set to release_name on output'
+    required: false
+    default: '${PACKAGE}_${GIT_DATE}.${SHORT_SHA}'
+  tag_name:
+    description: 'Value to set to tag_name on output'
+    required: false
+    default: '${GIT_DATE}.${SHORT_SHA}'
+  debug:
+    description: 'Display commands to they are executed'
+    required: false
+    default: true
+outputs:
+  files:
+    value: ${{ steps.vars.outputs.files }}
+  release_name:
+    value: ${{ steps.vars.outputs.release_name }}
+  tag_name:
+    value: ${{ steps.vars.outputs.tag_name }}
+runs:
+  using: "composite"
+  steps:
+    - name: Set variables
+      shell: bash
+      run: |
+        [ -z ${{ inputs.debug }} ] || set -x
+        case "${{ inputs.debug }}" in
+        yes|true)
+          debug='x'
+        ;;
+        esac
+        BUILD_PATH=${{ inputs.path }}
+        [ -z "${BUILD_PATH}" ] || cd "${BUILD_PATH}"
+        case "${{ inputs.install_build_depends }}" in
+        yes|true)
+          BUILD_DEPENDS="$(grep -Po '(?<=Build-Depends:).*' debian/control | egrep -o '[a-zA-Z+-]+')"
+        ;;
+        esac
+        BUILD_DEPENDS="${BUILD_DEPENDS} ${{ inputs.additional_build_depends }}"
+        CREATE_CHANGELOG=${{ inputs.create_changelog }} 
+        PACKAGE=${{ inputs.package }}
+        PACKAGE=${PACKAGE//_/-}
+        VERSION=${{ inputs.version }}
+        for n in debug BUILD_DEPENDS BUILD_PATH CREATE_CHANGELOG PACKAGE VERSION; do
+          typeset -n v=${n}
+          echo "${n}=${v}"
+        done >> $GITHUB_ENV
+    - name: Build package
+      run: |
+        [ -z ${{ env.debug }} ] || set -x
+        [ -z "${BUILD_PATH}" ] || cd "${BUILD_PATH}"
+        [ -z ${{ inputs.additional_archive }} ] || tar -xzvf "${{ inputs.additional_archive }}"
+        [ -f debian/control ] || exit 1
+        sudo apt-get update
+        sudo apt-get install -y build-essential bzr-builddeb dh-exec ${BUILD_DEPENDS}
+        case "${{ inputs.install_build_depends }}" in
+        yes|true)
+          dpkg-checkbuilddeps 2>&1 \
+          | sed -E 's| \([^)]+\)||g' \
+          | grep -Po 'dependencies: \K.*' \
+          | xargs -r sudo apt-get install -y
+        ;;
+        esac
+        sudo apt-get clean
+        case "${CREATE_CHANGELOG}" in
+        yes|true)
+          [ -d debian ] || mkdir debian
+          [ ! -f debian/changelog ] || rm debian/changelog
+          for ifs in \^ \~ \! \#; do
+            git log --format=%b:%B | grep -Fq "${ifs}" || break;
+          done
+          ver_date_sha=$(git log --format=tformat:%ad${ifs}%h${ifs}%aN${ifs}%aE${ifs}%f${ifs}%-aD${ifs}%D --date=format:%Y%m%d --reverse | while IFS=${ifs} read d s n e m t x; do
+            tag=$(grep -Po 'tag: [a-zA-Z]*\K[0-9a-f.]+' <<< "${x}"; :)
+            last_tag=${tag:-${last_tag:-0.0}}
+            dch_ver=${tag:-${last_tag}~git${d}.${s}}
+            if grep -q "(${dch_ver}})" debian/changelog 2>/dev/null; then
+              continue
+            else
+              NAME=${n} EMAIL=${e} dch ${first---create --package ${PACKAGE}} ${first+-b} -v ${dch_ver} "${m//-/ }"
+              sed -i '1s/UNRELEASED/unstable/g;0,/\(>  \).*/s//\1'"${t}"'/g' debian/changelog
+              first=''
+              [ -z "${VERSION}" ] || case "${dch_ver}" in
+              "${VERSION}")
+                echo "${dch_ver}${ifs}${d}${ifs}${s}"
+                break
+              ;;
+              esac
+            fi
+          done)
+          [ -z "${ver_date_sha}" ] || for var_name in DCH_VER GIT_DATE SHORT_SHA; do
+            typeset -n v=${var_name}
+            v=${ver_date_sha%%${ifs}*}
+            ver_date_sha=${ver_date_sha#${v}${ifs}}
+          done
+        ;;
+        esac
+        DCH_VER=${DCH_VER:-$(head -1 debian/changelog | grep -Po '(?:[a-z-]+\s)\(\K.*(?=\))')}
+        GIT_DATE=${GIT_DATE:-$(git log -1 --format=%ad --date=format:%Y%m%d)}
+        SHORT_SHA=${SHORT_SHA:-${GITHUB_SHA:0:7}}
+        TAG_NAME=${DCH_VER//\~/.}
+        for n in DCH_VER GIT_DATE SHORT_SHA TAG_NAME; do
+          typeset -n v=${n}
+          echo "${n}=${v}"
+        done | tee -a $GITHUB_ENV
+        cat debian/changelog
+        [ ! -f debian/watch ] || sed -Ei 's|(https?://github.com/)\S+|\1'${GITHUB_REPOSITORY}'|g' debian/watch
+        dpkg-buildpackage -b -rfakeroot -us -uc
+        debs=$(grep -Poz '(?s)(?:\nPackage:\s*\K\N+|\nArchitecture:\K\s\N+\n)' debian/control | while read p a; do
+          case "${a}" in any) a=${DEB_BUILD_ARCH:-$(dpkg-architecture -q DEB_BUILD_ARCH)};; esac
+          deb=${p}_${DCH_VER}_${a}.deb
+          echo "p = ${p}; a = ${a}; deb = ${deb}" 1>&2
+          [ -f ../${deb} ] && mv ../${deb} . && echo ${BUILD_PATH:+${BUILD_PATH}/}${deb}
+        done)
+        [ -n "${debs}" ] && \
+        echo "DEBS<<EOL" >> $GITHUB_ENV && \
+        echo "${debs}" >> $GITHUB_ENV && \
+        echo EOL >> $GITHUB_ENV
+      shell: bash
+    - name: Export output variables
+      id: vars
+      shell: bash
+      run: |
+        [ -z ${{ env.debug }} ] || set -x
+        debs="${{ env.DEBS }}"
+        [ -n "${{ inputs.tag_name }}" ] && TAG_NAME="${{ inputs.tag_name }}" || TAG_NAME="${{ env.TAG_NAME }}"
+        [ -n "${{ inputs.release_name }}" ] && RELEASE_NAME="${{ inputs.release_name }}" || RELEASE_NAME="${{ env.PACKAGE }}_${{ env.DCH_VER }}"
+        echo "::set-output name=files::${debs//$'\n'/%0A}"
+        echo "::set-output name=release_name::${{ env.RELEASE_NAME }}"
+        echo "::set-output name=tag_name::${{ env.TAG_NAME }}"
