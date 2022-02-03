@@ -104,7 +104,10 @@ runs:
           for ifs in \^ \~ \! \#; do
             git log --format=%b:%B | grep -Fq "${ifs}" || break;
           done
-          ver_date_sha=$(git log --format=tformat:%ad${ifs}%h${ifs}%aN${ifs}%aE${ifs}%f${ifs}%-aD${ifs}%D --date=format:%Y%m%d --reverse | while IFS=${ifs} read d s n e m t x; do
+          ver_date_sha=$(git log \
+          --format=tformat:%ad${ifs}%h${ifs}%aN${ifs}%aE${ifs}%f${ifs}%-aD${ifs}%D \
+          --date=format:%Y%m%d --reverse \
+          | while IFS=${ifs} read d s n e m t x; do
             tag=$(grep -Po 'tag: [a-zA-Z]*\K[0-9a-f.]+' <<< "${x}"; :)
             last_tag=${tag:-${last_tag:-0.0}}
             dch_ver=${tag:-${last_tag}~git${d}.${s}}
@@ -140,7 +143,8 @@ runs:
         cat debian/changelog
         [ ! -f debian/watch ] || sed -Ei 's|(https?://github.com/)\S+|\1'${GITHUB_REPOSITORY}'|g' debian/watch
         dpkg-buildpackage -b -rfakeroot -us -uc
-        debs=$(grep -Poz '(?s)(?:\nPackage:\s*\K\N+|\nArchitecture:\K\s\N+\n)' debian/control | while read p a; do
+        debs=$(grep -Poz '(?s)(?:\nPackage:\s*\K\N+|\nArchitecture:\K\s\N+\n)' debian/control \
+        | while read p a; do
           case "${a}" in any) a=${DEB_BUILD_ARCH:-$(dpkg-architecture -q DEB_BUILD_ARCH)};; esac
           deb=${p}_${DCH_VER}_${a}.deb
           echo "p = ${p}; a = ${a}; deb = ${deb}" 1>&2
