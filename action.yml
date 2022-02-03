@@ -87,7 +87,7 @@ runs:
         [ -z ${{ inputs.additional_archive }} ] || tar -xzvf "${{ inputs.additional_archive }}"
         [ -f debian/control ] || exit 1
         sudo apt-get update
-        sudo apt-get install -y build-essential bzr-builddeb dh-exec ${BUILD_DEPENDS}
+        sudo apt-get install -y build-essential debhelper devscripts dh-exec ${BUILD_DEPENDS}
         case "${{ inputs.install_build_depends }}" in
         yes|true)
           dpkg-checkbuilddeps 2>&1 \
