@@ -11,6 +11,8 @@ Minimal usage to build *.deb packages:
         runs-on: ubuntu-latest
         steps:
         - uses: actions/checkout@v2
+          with:
+            fetch-depth: '0'
         - id: debianise
           uses: twojstaryzdomu/debianise@HEAD
 
@@ -64,6 +66,17 @@ Value to set as `${VERSION}`. If unset, defaults to `0.0`.
 #### `create_changelog`
 
 A boolean. Create changelog based on git commit entries. Defaults to `true`.
+
+Note creating the changelog from scratch requires full git history, not a one commit clone
+that `checkout@v2` does by default. To enable full git history for all branches,
+make sure to specify `fetch-depth: 0`:
+
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: '0'
+
+If `debian/changelog` in the repository already contains all the remaining records
+but the most recent one, `fetch-depth: 0`  may be omitted.
 
 #### `release_name`
 
