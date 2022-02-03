@@ -111,7 +111,7 @@ runs:
             tag=$(grep -Po 'tag: [a-zA-Z]*\K[0-9a-f.]+' <<< "${x}"; :)
             last_tag=${tag:-${last_tag:-0.0}}
             dch_ver=${tag:-${last_tag}~git${d}.${s}}
-            if grep -q "(${dch_ver}})" debian/changelog 2>/dev/null; then
+            if grep -q "(${dch_ver})" debian/changelog 2>/dev/null; then
               continue
             else
               NAME=${n} EMAIL=${e} dch ${first---create --package ${PACKAGE}} ${first+-b} -v ${dch_ver} "${m//-/ }"
