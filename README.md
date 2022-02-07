@@ -81,12 +81,12 @@ but the most recent one, `fetch-depth: 0`  may be omitted.
 #### `release_name`
 
 Contains the name for the repository release page on github. Defaults to
-`${PACKAGE}_${GIT_DATE}.${SHORT_SHA}`
+`${PACKAGE}_${DCH_VER}`.
 
 #### `tag_name`
 
 Contains the tag name for the repository release page on github. Defaults to
-`${GIT_DATE}.${SHORT_SHA}`.
+`${DCH_VER//\~/.}` (`${DCH_VER}` replacing `~` for `.`).
 
 #### `debug`
 

@@ -36,11 +36,11 @@ inputs:
   release_name:
     description: 'Value to set to release_name on output'
     required: false
-    default: '${PACKAGE}_${GIT_DATE}.${SHORT_SHA}'
+    default: '${PACKAGE}_${DCH_VER}'
   tag_name:
     description: 'Value to set to tag_name on output'
     required: false
-    default: '${GIT_DATE}.${SHORT_SHA}'
+    default: '${DCH_VER//\~/.}'
   debug:
     description: 'Display commands to they are executed'
     required: false
@@ -134,9 +134,10 @@ runs:
         esac
         DCH_VER=${DCH_VER:-$(head -1 debian/changelog | grep -Po '(?:[a-z-]+\s)\(\K.*(?=\))')}
         GIT_DATE=${GIT_DATE:-$(git log -1 --format=%ad --date=format:%Y%m%d)}
+        RELEASE_NAME=${PACKAGE}_${DCH_VER}
         SHORT_SHA=${SHORT_SHA:-${GITHUB_SHA:0:7}}
         TAG_NAME=${DCH_VER//\~/.}
-        for n in DCH_VER GIT_DATE SHORT_SHA TAG_NAME; do
+        for n in DCH_VER GIT_DATE RELEASE_NAME SHORT_SHA TAG_NAME; do
           typeset -n v=${n}
           echo "${n}=${v}"
         done | tee -a $GITHUB_ENV
@@ -162,7 +163,7 @@ runs:
         [ -z ${{ env.debug }} ] || set -x
         debs="${{ env.DEBS }}"
         [ -n "${{ inputs.tag_name }}" ] && TAG_NAME="${{ inputs.tag_name }}" || TAG_NAME="${{ env.TAG_NAME }}"
-        [ -n "${{ inputs.release_name }}" ] && RELEASE_NAME="${{ inputs.release_name }}" || RELEASE_NAME="${{ env.PACKAGE }}_${{ env.DCH_VER }}"
+        [ -n "${{ inputs.release_name }}" ] && RELEASE_NAME="${{ inputs.release_name }}" || RELEASE_NAME="${{ env.RELEASE_NAME }}"
         echo "::set-output name=files::${debs//$'\n'/%0A}"
-        echo "::set-output name=release_name::${{ env.RELEASE_NAME }}"
-        echo "::set-output name=tag_name::${{ env.TAG_NAME }}"
+        echo "::set-output name=release_name::${RELEASE_NAME}"
+        echo "::set-output name=tag_name::${TAG_NAME}"
