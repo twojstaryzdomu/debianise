@@ -105,3 +105,10 @@ Output value that may be provided to the `name` input parameter of the `softprop
 #### `tag_name`
 
 Output value that may be provided to the `tag_name` input parameter of the `softprops/action-gh-release` action. 
+
+## Examples
+
+A working build process is implemented in the repo `https://github.com/twojstaryzdomu/log2ram/`.
+
+The packages produced under `Releases` are being provisioned by this action on commit to the
+master branch.
