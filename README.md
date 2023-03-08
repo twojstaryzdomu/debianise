@@ -34,6 +34,10 @@ This is a minimal example making use of outputs to publish the *.deb files in a 
 
 Most inputs are for convenience only and need not be set at all. The defaults are fine if the checked out repository is self-contained.
 
+#### `image`
+
+Docker image to use when building packages, for example `ubuntu:22.04` or `debian:stable`. By default, `ubuntu:latest` is used.
+
 #### `path`
 
 Path to the checked out sources to build. Not necessary if the checkout action is run without the path parameter. Unset by default.
