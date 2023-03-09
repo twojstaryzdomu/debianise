@@ -1,6 +1,10 @@
 name: 'debianise'
 description: 'Builds a debian package from sources in a github repository'
 inputs:
+  image:
+    description: 'Docker image to use'
+    required: false
+    default: 'ubuntu:latest'
   path:
     description: 'Path to the checked out sources to build'
     required: false
@@ -36,134 +40,53 @@ inputs:
   release_name:
     description: 'Value to set to release_name on output'
     required: false
-    default: '${PACKAGE}_${DCH_VER}'
+    default: ''
   tag_name:
     description: 'Value to set to tag_name on output'
     required: false
-    default: '${DCH_VER//\~/.}'
+    default: ''
   debug:
     description: 'Display commands to they are executed'
     required: false
     default: true
 outputs:
   files:
-    value: ${{ steps.vars.outputs.files }}
+    value: ${{ steps.run.outputs.files }}
   release_name:
-    value: ${{ steps.vars.outputs.release_name }}
+    value: ${{ steps.run.outputs.release_name }}
   tag_name:
-    value: ${{ steps.vars.outputs.tag_name }}
+    value: ${{ steps.run.outputs.tag_name }}
 runs:
   using: "composite"
   steps:
-    - name: Set variables
+    - name: pull
       shell: bash
       run: |
-        [ -z ${{ inputs.debug }} ] || set -x
-        case "${{ inputs.debug }}" in
-        yes|true)
-          debug='x'
-        ;;
-        esac
-        BUILD_PATH=${{ inputs.path }}
-        [ -z "${BUILD_PATH}" ] || cd "${BUILD_PATH}"
-        case "${{ inputs.install_build_depends }}" in
-        yes|true)
-          BUILD_DEPENDS="$(grep -Po '(?<=Build-Depends:).*' debian/control | egrep -o '[a-zA-Z+-]+')"
-        ;;
-        esac
-        BUILD_DEPENDS="${BUILD_DEPENDS} ${{ inputs.additional_build_depends }}"
-        CREATE_CHANGELOG=${{ inputs.create_changelog }} 
-        PACKAGE=${{ inputs.package }}
-        PACKAGE=${PACKAGE//_/-}
-        VERSION=${{ inputs.version }}
-        for n in debug BUILD_DEPENDS BUILD_PATH CREATE_CHANGELOG PACKAGE VERSION; do
-          typeset -n v=${n}
-          echo "${n}=${v}"
-        done >> $GITHUB_ENV
-    - name: Build package
-      run: |
-        [ -z ${{ env.debug }} ] || set -x
-        [ -z "${BUILD_PATH}" ] || cd "${BUILD_PATH}"
-        [ -z ${{ inputs.additional_archive }} ] || tar -xzvf "${{ inputs.additional_archive }}"
-        [ -f debian/control ] || exit 1
-        sudo apt-get update
-        sudo apt-get install -y --no-install-suggests build-essential debhelper devscripts dh-exec ${BUILD_DEPENDS}
-        case "${{ inputs.install_build_depends }}" in
-        yes|true)
-          dpkg-checkbuilddeps 2>&1 \
-          | sed -E 's| \([^)]+\)||g' \
-          | grep -Po 'dependencies: \K.*' \
-          | xargs -r sudo apt-get install -y
-        ;;
-        esac
-        sudo apt-get clean
-        case "${CREATE_CHANGELOG}" in
-        yes|true)
-          [ -d debian ] || mkdir debian
-          [ ! -f debian/changelog ] || rm debian/changelog
-          for ifs in \^ \~ \! \#; do
-            git log --format=%b:%B | grep -Fq "${ifs}" || break;
-          done
-          ver_date_sha=$(git log \
-          --format=tformat:%ad${ifs}%h${ifs}%aN${ifs}%aE${ifs}%f${ifs}%-aD${ifs}%D \
-          --date=format:%Y%m%d --reverse \
-          | while IFS=${ifs} read d s n e m t x; do
-            tag=$(grep -Po 'tag: [a-zA-Z]*\K[0-9a-f.]+' <<< "${x}"; :)
-            last_tag=${tag:-${last_tag:-0.0}}
-            dch_ver=${tag:-${last_tag}~git${d}.${s}}
-            if grep -q "(${dch_ver})" debian/changelog 2>/dev/null; then
-              continue
-            else
-              NAME=${n} EMAIL=${e} dch ${first---create --package ${PACKAGE}} ${first+-b} -v ${dch_ver} "${m//-/ }"
-              sed -i '1s/UNRELEASED/unstable/g;0,/\(>  \).*/s//\1'"${t}"'/g' debian/changelog
-              first=''
-              [ -z "${VERSION}" ] || case "${dch_ver}" in
-              "${VERSION}")
-                echo "${dch_ver}${ifs}${d}${ifs}${s}"
-                break
-              ;;
-              esac
-            fi
-          done)
-          [ -z "${ver_date_sha}" ] || for var_name in DCH_VER GIT_DATE SHORT_SHA; do
-            typeset -n v=${var_name}
-            v=${ver_date_sha%%${ifs}*}
-            ver_date_sha=${ver_date_sha#${v}${ifs}}
-          done
-        ;;
-        esac
-        DCH_VER=${DCH_VER:-$(head -1 debian/changelog | grep -Po '(?:[a-z-]+\s)\(\K.*(?=\))')}
-        GIT_DATE=${GIT_DATE:-$(git log -1 --format=%ad --date=format:%Y%m%d)}
-        RELEASE_NAME=${PACKAGE}_${DCH_VER}
-        SHORT_SHA=${SHORT_SHA:-${GITHUB_SHA:0:7}}
-        TAG_NAME=${DCH_VER//\~/.}
-        for n in DCH_VER GIT_DATE RELEASE_NAME SHORT_SHA TAG_NAME; do
-          typeset -n v=${n}
-          echo "${n}=${v}"
-        done | tee -a $GITHUB_ENV
-        cat debian/changelog
-        [ ! -f debian/watch ] || sed -Ei 's|(https?://github.com/)\S+|\1'${GITHUB_REPOSITORY}'|g' debian/watch
-        dpkg-buildpackage -b -rfakeroot -us -uc
-        debs=$(grep -Poz '(?s)(?:\nPackage:\s*\K\N+|\nArchitecture:\K\s\N+\n)' debian/control \
-        | while read p a; do
-          case "${a}" in any) a=${DEB_BUILD_ARCH:-$(dpkg-architecture -q DEB_BUILD_ARCH)};; esac
-          deb=${p}_${DCH_VER}_${a}.deb
-          echo "p = ${p}; a = ${a}; deb = ${deb}" 1>&2
-          [ -f ../${deb} ] && mv ../${deb} . && echo ${BUILD_PATH:+${BUILD_PATH}/}${deb}
-        done)
-        [ -n "${debs}" ] && \
-        echo "DEBS<<EOL" >> $GITHUB_ENV && \
-        echo "${debs}" >> $GITHUB_ENV && \
-        echo EOL >> $GITHUB_ENV
-      shell: bash
-    - name: Export output variables
-      id: vars
+        docker pull "${{ inputs.image }}"
+    - name: run
+      id: run
       shell: bash
       run: |
-        [ -z ${{ env.debug }} ] || set -x
-        debs="${{ env.DEBS }}"
-        [ -n "${{ inputs.tag_name }}" ] && TAG_NAME="${{ inputs.tag_name }}" || TAG_NAME="${{ env.TAG_NAME }}"
-        [ -n "${{ inputs.release_name }}" ] && RELEASE_NAME="${{ inputs.release_name }}" || RELEASE_NAME="${{ env.RELEASE_NAME }}"
-        echo "::set-output name=files::${debs//$'\n'/%0A}"
-        echo "::set-output name=release_name::${RELEASE_NAME}"
-        echo "::set-output name=tag_name::${TAG_NAME}"
+        docker run --rm -t \
+         -w "$(pwd)" \
+         -v "$(pwd):$(pwd)" \
+         -v "$(dirname "${GITHUB_OUTPUT}"):$(dirname "${GITHUB_OUTPUT}")" \
+         -v "${{ github.action_path }}:${{ github.action_path }}" \
+         -e GITHUB_OUTPUT="${GITHUB_OUTPUT}" \
+         -e GITHUB_ACTION_PATH="${{ github.action_path }}" \
+         -e GITHUB_REPOSITORY="${{ github.repository }}" \
+         -e GITHUB_WORKSPACE="${{ github.workspace }}" \
+         -e GITHUB_SHA="${{ github.sha }}" \
+         -e INPUT_PATH="${{ inputs.path }}" \
+         -e INPUT_INSTALL_BUILD_DEPENDS="${{ inputs.install_build_depends }}" \
+         -e INPUT_ADDITIONAL_BUILD_DEPENDS="${{ inputs.additional_build_depends }}" \
+         -e INPUT_ADDITIONAL_ARCHIVE="${{ inputs.additional_archive }}" \
+         -e INPUT_PRE_BUILD_CMD="${{ inputs.pre_build_cmd }}" \
+         -e INPUT_PACKAGE="${{ inputs.package }}" \
+         -e INPUT_VERSION="${{ inputs.version }}" \
+         -e INPUT_CREATE_CHANGELOG="${{ inputs.create_changelog }}" \
+         -e INPUT_RELEASE_NAME="${{ inputs.release_name }}" \
+         -e INPUT_TAG_NAME="${{ inputs.tag_name }}" \
+         -e INPUT_DEBUG="${{ inputs.debug }}" \
+         "${{ inputs.image }}" \
+         "${{ github.action_path }}/entrypoint.sh"
