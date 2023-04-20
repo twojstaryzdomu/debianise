@@ -164,6 +164,6 @@ runs:
         debs="${{ env.DEBS }}"
         [ -n "${{ inputs.tag_name }}" ] && TAG_NAME="${{ inputs.tag_name }}" || TAG_NAME="${{ env.TAG_NAME }}"
         [ -n "${{ inputs.release_name }}" ] && RELEASE_NAME="${{ inputs.release_name }}" || RELEASE_NAME="${{ env.RELEASE_NAME }}"
-        echo "::set-output name=files::${debs//$'\n'/%0A}"
-        echo "::set-output name=release_name::${RELEASE_NAME}"
-        echo "::set-output name=tag_name::${TAG_NAME}"
+        echo "files=${debs//$'\n'/%0A}" >> $GITHUB_OUTPUT
+        echo "release_name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
+        echo "tag_name=${TAG_NAME}" >> $GITHUB_OUTPUT
