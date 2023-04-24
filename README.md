@@ -9,6 +9,8 @@ Minimal usage to build *.deb packages:
     jobs:
       build:
         runs-on: ubuntu-latest
+        permissions:
+          contents: write
         steps:
         - uses: actions/checkout@v2
           with:
