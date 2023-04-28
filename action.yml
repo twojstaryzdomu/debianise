@@ -75,6 +75,7 @@ runs:
         CREATE_CHANGELOG=${{ inputs.create_changelog }} 
         PACKAGE=${{ inputs.package }}
         PACKAGE=${PACKAGE//_/-}
+        PACKAGE=${PACKAGE,,}
         VERSION=${{ inputs.version }}
         for n in debug BUILD_DEPENDS BUILD_PATH CREATE_CHANGELOG PACKAGE VERSION; do
           typeset -n v=${n}
