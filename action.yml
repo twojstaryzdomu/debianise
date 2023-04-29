@@ -68,7 +68,7 @@ runs:
         [ -z "${BUILD_PATH}" ] || cd "${BUILD_PATH}"
         case "${{ inputs.install_build_depends }}" in
         yes|true)
-          BUILD_DEPENDS="$(grep -Po '(?<=Build-Depends:).*' debian/control | egrep -o '[a-zA-Z+-]+')"
+          BUILD_DEPENDS="$(grep -Po '(?<=Build-Depends:).*' debian/control | egrep -o '[a-zA-Z][a-zA-Z0-9+-]+' | tr '\n' ' ')"
         ;;
         esac
         BUILD_DEPENDS="${BUILD_DEPENDS} ${{ inputs.additional_build_depends }}"
@@ -93,7 +93,7 @@ runs:
         yes|true)
           dpkg-checkbuilddeps 2>&1 \
           | sed -E 's| \([^)]+\)||g' \
-          | grep -Po 'dependencies: \K.*' \
+          | ( grep -Po 'dependencies: \K.*' || true ) \
           | xargs -r sudo apt-get install -y
         ;;
         esac
